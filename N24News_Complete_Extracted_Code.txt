@@ -1,0 +1,904 @@
+# N24News Classification Project — Complete Notebook Code
+# Extracted from N24News_Classification_Project_Final.ipynb
+# Cells are kept in original order. Colab/Jupyter shell commands beginning with !
+# must be run in a notebook cell, not as ordinary Python script statements.
+
+
+########################################################################################
+# NOTEBOOK CODE CELL 2
+########################################################################################
+
+!nvidia-smi
+
+########################################################################################
+# NOTEBOOK CODE CELL 3
+########################################################################################
+import torch
+
+print("PyTorch version:", torch.__version__)
+
+print("CUDA available:", torch.cuda.is_available())
+
+if torch.cuda.is_available():
+    print("GPU:", torch.cuda.get_device_name(0))
+else:
+    print("GPU not detected!")
+
+########################################################################################
+# NOTEBOOK CODE CELL 4
+########################################################################################
+!pip -q install gdown
+
+!gdown --fuzzy "https://drive.google.com/file/d/1OS1fXwZ1Vsj70lEQajccyssxQRYp5X9D/view?usp=share_link" -O N24News_download
+
+########################################################################################
+# NOTEBOOK CODE CELL 5
+########################################################################################
+!ls -lh
+!file N24News_download
+
+########################################################################################
+# NOTEBOOK CODE CELL 6
+########################################################################################
+import zipfile
+import os
+
+zip_path = "N24News_download"
+extract_path = "/content/dataset"
+
+os.makedirs(extract_path, exist_ok=True)
+
+with zipfile.ZipFile(zip_path, 'r') as zip_ref:
+    zip_ref.extractall(extract_path)
+
+print("Dataset extracted successfully!")
+
+########################################################################################
+# NOTEBOOK CODE CELL 7
+########################################################################################
+import os
+
+extract_path = "/content/dataset"
+
+for root, dirs, files in os.walk(extract_path):
+
+    print("\nFolder:", root)
+
+    for file in files[:10]:
+        print("   ", file)
+
+    if root.count(os.sep) - extract_path.count(os.sep) >= 2:
+        dirs.clear()
+
+########################################################################################
+# NOTEBOOK CODE CELL 8
+########################################################################################
+import os
+import json
+
+news_path = "/content/dataset/news"
+
+# Check file sizes
+for file in os.listdir(news_path):
+    path = os.path.join(news_path, file)
+    size_mb = os.path.getsize(path) / (1024 * 1024)
+    print(f"{file}: {size_mb:.2f} MB")
+
+########################################################################################
+# NOTEBOOK CODE CELL 9
+########################################################################################
+file_path = os.path.join(news_path, "nytimes_train.json")
+
+with open(file_path, "r", encoding="utf-8") as f:
+    content = f.read(5000)
+
+print(content)
+
+########################################################################################
+# NOTEBOOK CODE CELL 10
+########################################################################################
+import pandas as pd
+import os
+
+news_path = "/content/dataset/news"
+
+train_df = pd.read_json(
+    os.path.join(news_path, "nytimes_train.json")
+)
+
+dev_df = pd.read_json(
+    os.path.join(news_path, "nytimes_dev.json")
+)
+
+test_df = pd.read_json(
+    os.path.join(news_path, "nytimes_test.json")
+)
+
+print("Training data:", train_df.shape)
+print("Validation data:", dev_df.shape)
+print("Testing data:", test_df.shape)
+
+########################################################################################
+# NOTEBOOK CODE CELL 11
+########################################################################################
+print("Number of categories:",
+      train_df['section'].nunique())
+
+print("\nCategory distribution:")
+print(train_df['section'].value_counts())
+
+########################################################################################
+# NOTEBOOK CODE CELL 12
+########################################################################################
+print(train_df.isnull().sum())
+
+########################################################################################
+# NOTEBOOK CODE CELL 13
+########################################################################################
+pd.set_option('display.max_colwidth', 150)
+
+display(
+    train_df[['section', 'headline', 'article']].head(5)
+)
+
+########################################################################################
+# NOTEBOOK CODE CELL 14
+########################################################################################
+print("Duplicate training articles:",
+      train_df.duplicated(
+          subset=['headline', 'article']
+      ).sum())
+
+print("Duplicate validation articles:",
+      dev_df.duplicated(
+          subset=['headline', 'article']
+      ).sum())
+
+print("Duplicate testing articles:",
+      test_df.duplicated(
+          subset=['headline', 'article']
+      ).sum())
+
+########################################################################################
+# NOTEBOOK CODE CELL 15
+########################################################################################
+train_df['text'] = (
+    train_df['headline'] + " " + train_df['article']
+)
+
+dev_df['text'] = (
+    dev_df['headline'] + " " + dev_df['article']
+)
+
+test_df['text'] = (
+    test_df['headline'] + " " + test_df['article']
+)
+
+print(train_df['text'].iloc[0][:1000])
+
+########################################################################################
+# NOTEBOOK CODE CELL 16
+########################################################################################
+print("Before:", train_df.shape)
+
+train_df = train_df.drop_duplicates(
+    subset=['headline', 'article']
+).reset_index(drop=True)
+
+print("After:", train_df.shape)
+
+########################################################################################
+# NOTEBOOK CODE CELL 17
+########################################################################################
+train_ids = set(train_df['article_id'])
+dev_ids = set(dev_df['article_id'])
+test_ids = set(test_df['article_id'])
+
+print("Train-Test overlap:", len(train_ids & test_ids))
+print("Train-Validation overlap:", len(train_ids & dev_ids))
+print("Validation-Test overlap:", len(dev_ids & test_ids))
+
+########################################################################################
+# NOTEBOOK CODE CELL 18
+########################################################################################
+import re
+
+def clean_text(text):
+    text = text.lower()
+    text = re.sub(r'[^a-z\s]', ' ', text)
+    text = re.sub(r'\s+', ' ', text)
+    return text.strip()
+
+
+train_df['clean_text'] = train_df['text'].apply(clean_text)
+dev_df['clean_text'] = dev_df['text'].apply(clean_text)
+test_df['clean_text'] = test_df['text'].apply(clean_text)
+
+print("Original text:")
+print(train_df['text'].iloc[0][:300])
+
+print("\nCleaned text:")
+print(train_df['clean_text'].iloc[0][:300])
+
+########################################################################################
+# NOTEBOOK CODE CELL 19
+########################################################################################
+X_train = train_df['clean_text']
+y_train = train_df['section']
+
+X_val = dev_df['clean_text']
+y_val = dev_df['section']
+
+X_test = test_df['clean_text']
+y_test = test_df['section']
+
+print("Training:", X_train.shape, y_train.shape)
+print("Validation:", X_val.shape, y_val.shape)
+print("Testing:", X_test.shape, y_test.shape)
+
+########################################################################################
+# NOTEBOOK CODE CELL 21
+########################################################################################
+from sklearn.feature_extraction.text import TfidfVectorizer
+
+tfidf = TfidfVectorizer(
+    max_features=20000,
+    stop_words='english',
+    ngram_range=(1, 2),
+    min_df=2,
+    max_df=0.95
+)
+
+# Learn vocabulary and transform training data
+X_train_tfidf = tfidf.fit_transform(X_train)
+
+# Transform validation and testing data
+X_val_tfidf = tfidf.transform(X_val)
+X_test_tfidf = tfidf.transform(X_test)
+
+print("Training shape:", X_train_tfidf.shape)
+print("Validation shape:", X_val_tfidf.shape)
+print("Testing shape:", X_test_tfidf.shape)
+
+########################################################################################
+# NOTEBOOK CODE CELL 22
+########################################################################################
+from sklearn.naive_bayes import MultinomialNB
+from sklearn.metrics import accuracy_score, classification_report
+
+# Create model
+nb_model = MultinomialNB()
+
+# Train model
+nb_model.fit(X_train_tfidf, y_train)
+
+# Predict validation data
+nb_val_pred = nb_model.predict(X_val_tfidf)
+
+# Evaluate
+print("Validation Accuracy:",
+      accuracy_score(y_val, nb_val_pred))
+
+print("\nClassification Report:")
+print(classification_report(y_val, nb_val_pred))
+
+########################################################################################
+# NOTEBOOK CODE CELL 23
+########################################################################################
+from sklearn.metrics import (
+    accuracy_score,
+    precision_recall_fscore_support
+)
+
+nb_accuracy = accuracy_score(y_val, nb_val_pred)
+
+nb_precision, nb_recall, nb_f1, _ = (
+    precision_recall_fscore_support(
+        y_val,
+        nb_val_pred,
+        average='weighted',
+        zero_division=0
+    )
+)
+
+results = []
+
+results.append({
+    "Model": "Naive Bayes",
+    "Accuracy": nb_accuracy,
+    "Precision": nb_precision,
+    "Recall": nb_recall,
+    "F1-Score": nb_f1
+})
+
+print(results)
+
+########################################################################################
+# NOTEBOOK CODE CELL 24
+########################################################################################
+from sklearn.linear_model import LogisticRegression
+from sklearn.metrics import accuracy_score, classification_report
+
+lr_model = LogisticRegression(
+    max_iter=1000,
+    C=1.0,
+    random_state=42
+)
+
+# Training
+lr_model.fit(X_train_tfidf, y_train)
+
+# Validation predictions
+lr_val_pred = lr_model.predict(X_val_tfidf)
+
+# Evaluation
+print("Validation Accuracy:",
+      accuracy_score(y_val, lr_val_pred))
+
+print("\nClassification Report:")
+print(classification_report(
+    y_val,
+    lr_val_pred,
+    zero_division=0
+))
+
+########################################################################################
+# NOTEBOOK CODE CELL 25
+########################################################################################
+from sklearn.svm import LinearSVC
+from sklearn.metrics import accuracy_score, classification_report
+
+svm_model = LinearSVC(
+    C=1.0,
+    random_state=42,
+    max_iter=2000
+)
+
+# Training
+svm_model.fit(X_train_tfidf, y_train)
+
+# Validation predictions
+svm_val_pred = svm_model.predict(X_val_tfidf)
+
+# Evaluation
+print("Validation Accuracy:",
+      accuracy_score(y_val, svm_val_pred))
+
+print("\nClassification Report:")
+print(classification_report(
+    y_val,
+    svm_val_pred,
+    zero_division=0
+))
+
+########################################################################################
+# NOTEBOOK CODE CELL 26
+########################################################################################
+import torch
+
+print("GPU Available:", torch.cuda.is_available())
+
+if torch.cuda.is_available():
+    print("GPU:", torch.cuda.get_device_name(0))
+    print("GPU Memory:",
+          round(torch.cuda.get_device_properties(0).total_memory / 1024**3, 2),
+          "GB")
+
+########################################################################################
+# NOTEBOOK CODE CELL 28
+########################################################################################
+!pip -q install transformers datasets accelerate
+
+########################################################################################
+# NOTEBOOK CODE CELL 29
+########################################################################################
+import torch
+import numpy as np
+import pandas as pd
+
+from transformers import (
+    BertTokenizer,
+    BertForSequenceClassification,
+    TrainingArguments,
+    Trainer
+)
+
+print("PyTorch:", torch.__version__)
+print("CUDA:", torch.cuda.is_available())
+
+########################################################################################
+# NOTEBOOK CODE CELL 30
+########################################################################################
+from sklearn.preprocessing import LabelEncoder
+
+label_encoder = LabelEncoder()
+
+train_df['label'] = label_encoder.fit_transform(train_df['section'])
+dev_df['label'] = label_encoder.transform(dev_df['section'])
+test_df['label'] = label_encoder.transform(test_df['section'])
+
+num_labels = len(label_encoder.classes_)
+
+print("Number of categories:", num_labels)
+print("\nCategory mapping:")
+
+for i, category in enumerate(label_encoder.classes_):
+    print(i, ":", category)
+
+########################################################################################
+# NOTEBOOK CODE CELL 31
+########################################################################################
+from transformers import BertTokenizer
+
+tokenizer = BertTokenizer.from_pretrained(
+    "bert-base-uncased"
+)
+
+print("BERT tokenizer loaded successfully!")
+
+########################################################################################
+# NOTEBOOK CODE CELL 32
+########################################################################################
+from datasets import Dataset
+
+# Convert Pandas DataFrames into Hugging Face datasets
+train_dataset = Dataset.from_pandas(
+    train_df[['text', 'label']]
+)
+
+val_dataset = Dataset.from_pandas(
+    dev_df[['text', 'label']]
+)
+
+test_dataset = Dataset.from_pandas(
+    test_df[['text', 'label']]
+)
+
+# Tokenization function
+def tokenize_function(examples):
+    return tokenizer(
+        examples['text'],
+        padding='max_length',
+        truncation=True,
+        max_length=384
+    )
+
+# Tokenize all datasets
+train_dataset = train_dataset.map(
+    tokenize_function,
+    batched=True
+)
+
+val_dataset = val_dataset.map(
+    tokenize_function,
+    batched=True
+)
+
+test_dataset = test_dataset.map(
+    tokenize_function,
+    batched=True
+)
+
+print("Tokenization completed!")
+
+########################################################################################
+# NOTEBOOK CODE CELL 33
+########################################################################################
+# Rename label column to labels
+train_dataset = train_dataset.rename_column("label", "labels")
+val_dataset = val_dataset.rename_column("label", "labels")
+test_dataset = test_dataset.rename_column("label", "labels")
+
+# Keep only columns required by BERT
+columns = [
+    'input_ids',
+    'attention_mask',
+    'token_type_ids',
+    'labels'
+]
+
+train_dataset.set_format(
+    type='torch',
+    columns=columns
+)
+
+val_dataset.set_format(
+    type='torch',
+    columns=columns
+)
+
+test_dataset.set_format(
+    type='torch',
+    columns=columns
+)
+
+print("Dataset preparation completed!")
+print("Input shape:", train_dataset[0]['input_ids'].shape)
+print("Label:", train_dataset[0]['labels'])
+
+########################################################################################
+# NOTEBOOK CODE CELL 34
+########################################################################################
+from transformers import BertForSequenceClassification
+
+model = BertForSequenceClassification.from_pretrained(
+    "bert-base-uncased",
+    num_labels=24
+)
+
+# Move model to GPU
+model.to("cuda")
+
+print("BERT model loaded successfully!")
+print("Model device:", next(model.parameters()).device)
+
+########################################################################################
+# NOTEBOOK CODE CELL 35
+########################################################################################
+from sklearn.metrics import accuracy_score, precision_recall_fscore_support
+
+def compute_metrics(eval_pred):
+    logits, labels = eval_pred
+    predictions = np.argmax(logits, axis=-1)
+
+    precision, recall, f1, _ = precision_recall_fscore_support(
+        labels,
+        predictions,
+        average='weighted',
+        zero_division=0
+    )
+
+    _, _, macro_f1, _ = precision_recall_fscore_support(
+        labels,
+        predictions,
+        average='macro',
+        zero_division=0
+    )
+
+    return {
+        'accuracy': accuracy_score(labels, predictions),
+        'precision': precision,
+        'recall': recall,
+        'f1': f1,
+        'macro_f1': macro_f1
+    }
+
+print("Evaluation metrics configured!")
+
+########################################################################################
+# NOTEBOOK CODE CELL 36
+########################################################################################
+import transformers
+import inspect
+
+print("Transformers version:", transformers.__version__)
+print(inspect.signature(TrainingArguments.__init__))
+
+########################################################################################
+# NOTEBOOK CODE CELL 37
+########################################################################################
+import math
+from transformers import TrainingArguments, Trainer
+
+# Calculate warmup steps (10% of total training steps)
+steps_per_epoch = math.ceil(
+    len(train_dataset) / (8 * 2)
+)
+total_steps = steps_per_epoch * 3
+warmup_steps = int(total_steps * 0.1)
+
+training_args = TrainingArguments(
+
+    output_dir="./bert_news_results",
+
+    num_train_epochs=3,
+
+    per_device_train_batch_size=8,
+    per_device_eval_batch_size=16,
+    gradient_accumulation_steps=2,
+
+    learning_rate=1e-5,
+    weight_decay=0.01,
+
+    warmup_steps=warmup_steps,
+    lr_scheduler_type="linear",
+
+    eval_strategy="epoch",
+    save_strategy="epoch",
+
+    logging_steps=100,
+
+    load_best_model_at_end=True,
+    metric_for_best_model="f1",
+    greater_is_better=True,
+    save_total_limit=1,
+
+    max_grad_norm=1.0,
+    seed=42,
+
+    fp16=True,
+    report_to="none"
+)
+
+trainer = Trainer(
+    model=model,
+    args=training_args,
+    train_dataset=train_dataset,
+    eval_dataset=val_dataset,
+    compute_metrics=compute_metrics
+)
+
+print("BERT Trainer configured successfully!")
+print("Total training steps:", total_steps)
+print("Warmup steps:", warmup_steps)
+
+########################################################################################
+# NOTEBOOK CODE CELL 38
+########################################################################################
+training_output = trainer.train()
+
+########################################################################################
+# NOTEBOOK CODE CELL 39
+########################################################################################
+# Evaluate the currently loaded best model
+bert_val_results = trainer.evaluate()
+
+print(bert_val_results)
+
+########################################################################################
+# NOTEBOOK CODE CELL 40
+########################################################################################
+from sklearn.metrics import classification_report
+import numpy as np
+
+bert_val_output = trainer.predict(val_dataset)
+
+bert_val_pred = np.argmax(
+    bert_val_output.predictions,
+    axis=1
+)
+
+print(classification_report(
+    dev_df['label'],       # Numerical actual labels
+    bert_val_pred,         # Numerical predictions
+    target_names=label_encoder.classes_,
+    zero_division=0
+))
+
+########################################################################################
+# NOTEBOOK CODE CELL 41
+########################################################################################
+import matplotlib.pyplot as plt
+import seaborn as sns
+from sklearn.metrics import confusion_matrix
+
+cm = confusion_matrix(
+    dev_df['label'],
+    bert_val_pred
+)
+
+plt.figure(figsize=(18, 15))
+
+sns.heatmap(
+    cm,
+    cmap='Blues',
+    xticklabels=label_encoder.classes_,
+    yticklabels=label_encoder.classes_
+)
+
+plt.xlabel("Predicted Category")
+plt.ylabel("Actual Category")
+plt.title("BERT Confusion Matrix")
+plt.xticks(rotation=90)
+plt.yticks(rotation=0)
+plt.tight_layout()
+plt.show()
+
+########################################################################################
+# NOTEBOOK CODE CELL 43
+########################################################################################
+from sklearn.metrics import accuracy_score, precision_recall_fscore_support
+import pandas as pd
+import numpy as np
+
+final_results = []
+
+def evaluate_model(name, actual, predicted):
+    precision, recall, f1, _ = precision_recall_fscore_support(
+        actual, predicted,
+        average='weighted',
+        zero_division=0
+    )
+
+    _, _, macro_f1, _ = precision_recall_fscore_support(
+        actual, predicted,
+        average='macro',
+        zero_division=0
+    )
+
+    final_results.append({
+        "Model": name,
+        "Accuracy": accuracy_score(actual, predicted),
+        "Precision": precision,
+        "Recall": recall,
+        "Weighted F1": f1,
+        "Macro F1": macro_f1
+    })
+
+# Traditional ML predictions
+nb_test_pred = nb_model.predict(X_test_tfidf)
+lr_test_pred = lr_model.predict(X_test_tfidf)
+svm_test_pred = svm_model.predict(X_test_tfidf)
+
+# BERT predictions
+bert_test_output = trainer.predict(test_dataset)
+bert_test_pred = np.argmax(
+    bert_test_output.predictions,
+    axis=1
+)
+
+# Evaluate all models
+evaluate_model("Naive Bayes", test_df['section'], nb_test_pred)
+evaluate_model("Logistic Regression", test_df['section'], lr_test_pred)
+evaluate_model("Linear SVM", test_df['section'], svm_test_pred)
+evaluate_model("BERT", test_df['label'], bert_test_pred)
+
+# Display comparison
+comparison_df = pd.DataFrame(final_results)
+print(comparison_df.round(4).to_string(index=False))
+
+########################################################################################
+# NOTEBOOK CODE CELL 45
+########################################################################################
+import torch
+import ipywidgets as widgets
+import re
+from IPython.display import display, HTML, clear_output
+
+def clean_text(text):
+    text = text.lower()
+    text = re.sub(r'[^a-z\s]', ' ', text)
+    text = re.sub(r'\s+', ' ', text)
+    return text.strip()
+
+# Input fields
+headline_input = widgets.Text(
+    placeholder="Enter news headline...",
+    description="Headline:",
+    layout=widgets.Layout(width="100%"),
+    style={"description_width": "90px"}
+)
+
+article_input = widgets.Textarea(
+    placeholder="Paste the complete news article here...",
+    description="Article:",
+    layout=widgets.Layout(width="100%", height="180px"),
+    style={"description_width": "90px"}
+)
+
+classify_button = widgets.Button(
+    description="Classify News",
+    button_style="primary",
+    icon="search",
+    layout=widgets.Layout(width="180px", height="40px")
+)
+
+output = widgets.Output()
+
+# Prediction function
+def classify_news_ui(b):
+
+    with output:
+        clear_output()
+
+        headline = headline_input.value.strip()
+        article = article_input.value.strip()
+
+        if not headline or not article:
+            display(HTML(
+                "<p style='color:red;'>Please enter both headline and article.</p>"
+            ))
+            return
+
+        text = headline + " " + article
+
+        # Traditional ML predictions
+        cleaned_text = clean_text(text)
+        tfidf_input = tfidf.transform([cleaned_text])
+
+        nb_pred = nb_model.predict(tfidf_input)[0]
+        lr_pred = lr_model.predict(tfidf_input)[0]
+        svm_pred = svm_model.predict(tfidf_input)[0]
+
+        # BERT prediction
+        encoding = tokenizer(
+            text,
+            truncation=True,
+            padding="max_length",
+            max_length=384,
+            return_tensors="pt"
+        )
+
+        device = next(model.parameters()).device
+        encoding = {
+            k: v.to(device) for k, v in encoding.items()
+        }
+
+        model.eval()
+
+        with torch.no_grad():
+            logits = model(**encoding).logits
+            bert_label = torch.argmax(logits, dim=1).item()
+
+        bert_pred = label_encoder.inverse_transform([bert_label])[0]
+
+        predictions = {
+            "Naive Bayes": nb_pred,
+            "Logistic Regression": lr_pred,
+            "Linear SVM": svm_pred,
+            "BERT": bert_pred
+        }
+
+        # Count agreement
+        from collections import Counter
+        counts = Counter(predictions.values())
+        majority_category, votes = counts.most_common(1)[0]
+
+        # Display headline
+        display(HTML(f"""
+        <div style="background:#172554; color:white; padding:18px;
+                    border-radius:10px; margin-top:15px;">
+            <h3 style="margin:0; color:white;">News Classification Results</h3>
+            <p style="margin:8px 0 0;">{headline}</p>
+        </div>
+        """))
+
+        # Prediction table
+        rows = ""
+
+        for name, category in predictions.items():
+            rows += f"""
+            <tr>
+                <td style="padding:12px; border-bottom:1px solid #ddd;">
+                    <b>{name}</b>
+                </td>
+                <td style="padding:12px; border-bottom:1px solid #ddd;">
+                    {category}
+                </td>
+            </tr>
+            """
+
+        display(HTML(f"""
+        <table style="width:100%; border-collapse:collapse;
+                      margin-top:15px; font-size:14px;">
+            <tr style="background:#334155; color:white;">
+                <th style="padding:12px; text-align:left;">Model</th>
+                <th style="padding:12px; text-align:left;">Predicted Category</th>
+            </tr>
+            {rows}
+        </table>
+        """))
+
+        # Agreement summary
+        display(HTML(f"""
+        <div style="background:#f1f5f9; color:#172554;
+                    padding:15px; border-radius:10px; margin-top:15px;">
+            <b>Model Agreement</b><br>
+            {votes} out of 4 models predicted:
+            <b>{majority_category}</b>
+        </div>
+        """))
+
+# Button action
+classify_button.on_click(classify_news_ui)
+
+# Display interface
+display(HTML("""
+<h2 style="color:#2563eb;">AI-Powered News Classification</h2>
+<p>Compare predictions from four Machine Learning and Deep Learning models.</p>
+"""))
+
+display(headline_input)
+display(article_input)
+display(classify_button)
+display(output)
